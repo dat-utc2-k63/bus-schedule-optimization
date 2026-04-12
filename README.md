@@ -1,47 +1,35 @@
-# Hybrid AI — Bus Scheduling Optimization (HCMC)
+# Hybrid AI — Tối Ưu Lịch Xe Buýt (TP.HCM)
 
-Graduation project: Spatio-Temporal GNN + Genetic Algorithm + Tabu Search on a multi-route synthetic network.
+Luận văn: **Spatio-Temporal GNN** (GCN + GRU) + **GA + Tabu** trên mạng nhiều tuyến, dữ liệu tổng hợp (8 bảng CSV).
 
-## Layout
+## Cấu trúc
 
 ```
-bus-schedule-optimization/
-├── data/                    # Generated CSVs (8-table schema, see below)
-├── models/gnn_model.py      # GCN + GRU (Spektral / TensorFlow)
-├── optimizers/network_optimizer.py   # Network-wide GA + Tabu
+├── data/                    # CSV (topology: stops, route_master, route_stops + bảng sinh)
+├── models/gnn_model.py
+├── optimizers/network_optimizer.py
 ├── utils/
-│   ├── domain.py            # BusStop, demand ranges, rush/rain constants
-│   ├── network_sim.py       # 13-stop, 4-route graph + demand
-│   └── schema_sim.py        # Exports Route_Master, Stops, … Operation_Logs
-├── main.py                  # Train GNN + run optimizer
-├── app.py                   # Flask dashboard (before / after graphs)
-├── requirements.txt
-└── README.md
+│   ├── domain.py
+│   ├── network_sim.py
+│   ├── schema_sim.py
+│   └── gnn_propagation.py
+├── main.py                  # Pipeline CLI (tùy chọn)
+├── notebook.ipynb           # Chạy & đánh giá chính
+└── requirements.txt
 ```
 
-## Data schema (CSV in `data/`)
-
-| File | Role |
-|------|------|
-| `route_master.csv` | Routes |
-| `stops.csv` | Stops |
-| `network_segments.csv` | Edges |
-| `buses.csv` | Fleet |
-| `trips.csv` | Trips |
-| `stop_times.csv` | Planned times |
-| `spatiotemporal_snapshots.csv` | GNN training (long format) |
-| `operation_logs.csv` | Actual operations |
-
-## Quick start
+## Cài đặt
 
 ```bash
 pip install -r requirements.txt
-python main.py --days 7 --epochs 20   # sinh data/*.csv
-python app.py   # giao diện: http://127.0.0.1:5000
-                # Tab 1: đồ thị trước/sau tối ưu · Tab 2: xem bảng CSV
 ```
 
-## References
+## Chạy
+
+- **Notebook (khuyến nghị):** mở `notebook.ipynb` — đọc `data/*.csv` có sẵn, không sinh lại trừ khi thiếu file hoặc `REGENERATE_DATA = True`.
+- **CLI:** `python main.py` — dùng `--regenerate-data` nếu muốn tạo lại toàn bộ CSV.
+
+## Tham chiếu
 
 - [Spektral](https://github.com/danielegrattarola/spektral)
 - [scikit-opt](https://github.com/guofei9987/scikit-opt)

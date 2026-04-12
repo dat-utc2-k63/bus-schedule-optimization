@@ -1,88 +1,147 @@
 """
-Multi-route HCMC bus network definition and demand simulation.
+Multi-route HCMC bus network: graph, demand, and Cytoscape export.
 
-Defines a 13-stop, 4-route network with shared transfer stops,
-simulates per-stop demand, and exports Cytoscape.js graph elements
-for the Flask dashboard.
+Topology (trạm, thứ tự trạm trên tuyến, màu, tên tuyến) được đọc từ CSV trong
+``data/`` — không hard-code lộ trình trong code.
+
+Bắt buộc:
+  - ``stops.csv``          — danh sách trạm
+  - ``route_master.csv``   — mã tuyến, tên, màu, khung phục vụ
+  - ``route_stops.csv``    — lộ trình: (route_code, sequence, stop_id)
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import os
+from typing import Any, Dict, List, Tuple
 
 import networkx as nx
 import numpy as np
+import pandas as pd
 
 from utils.domain import BusStop, DEMAND_RANGE
 
-# ---------------------------------------------------------------------------
-# Network topology
-# ---------------------------------------------------------------------------
-NETWORK_STOPS: List[BusStop] = [
-    # --- Line 19 corridor ---
-    BusStop(0,  "Ben Thanh",        "hub",         10.7726, 106.6980),
-    BusStop(1,  "Nguyen Trai",      "commercial",  10.7580, 106.6820),
-    BusStop(2,  "An Duong Vuong",   "residential", 10.7530, 106.6620),
-    BusStop(3,  "Hung Vuong",       "commercial",  10.7560, 106.6510),
-    BusStop(4,  "Hong Bang",        "school",      10.7570, 106.6380),
-    BusStop(5,  "Kinh Duong Vuong", "residential", 10.7620, 106.6150),
-    BusStop(6,  "Tan Ky Tan Quy",  "residential", 10.7830, 106.6060),
-    BusStop(7,  "An Suong",         "terminal",    10.8340, 106.6190),
-    # --- Additional network stops ---
-    BusStop(8,  "Cho Lon",          "hub",         10.7500, 106.6520),
-    BusStop(9,  "Phu Nhuan",        "commercial",  10.7980, 106.6820),
-    BusStop(10, "Go Vap",           "terminal",    10.8230, 106.6700),
-    BusStop(11, "Thu Duc",          "terminal",    10.8500, 106.7530),
-    BusStop(12, "Binh Thanh",       "residential", 10.8080, 106.7100),
-]
-
-ROUTE_DEFS: Dict[str, Dict[str, Any]] = {
-    "19": {
-        "name": "Bến Thành – An Sương",
-        "stops": [0, 1, 2, 3, 4, 5, 6, 7],
-        "color": "#2196F3",
-    },
-    "01": {
-        "name": "Bến Thành – Gò Vấp",
-        "stops": [0, 8, 3, 5, 10],
-        "color": "#4CAF50",
-    },
-    "65": {
-        "name": "Chợ Lớn – Thủ Đức",
-        "stops": [8, 4, 6, 12, 11],
-        "color": "#FF9800",
-    },
-    "52": {
-        "name": "Bến Thành – Thủ Đức",
-        "stops": [0, 9, 12, 11],
-        "color": "#9C27B0",
-    },
-}
-
-# Operational constants
+# Operational constants (không thuộc topology)
 AVG_SPEED_KMH = 18.0
 AVG_DWELL_MIN = 1.0
 TURNAROUND_MIN = 5.0
 COST_PER_BUS_HOUR = 45.0  # VND-equivalent abstract unit
 
 
+def default_data_dir() -> str:
+    """Thư mục ``data/`` cạnh thư mục gốc project."""
+    return os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+    )
+
+
+def _norm_route_code(raw: Any) -> str:
+    """Chuẩn hóa mã tuyến (vd. 1 → '01')."""
+    s = str(raw).strip()
+    if s.isdigit():
+        return s.zfill(2)
+    return s
+
+
+def load_network_from_csv(data_dir: str) -> Tuple[List[BusStop], Dict[str, Dict[str, Any]], List[str]]:
+    """
+    Đọc stops + route_master + route_stops → danh sách BusStop và dict routes.
+
+    Mỗi phần tử ``routes[code]`` có: name, color, stops (list[int] theo thứ tự chạy).
+    """
+    stops_path = os.path.join(data_dir, "stops.csv")
+    rm_path = os.path.join(data_dir, "route_master.csv")
+    rs_path = os.path.join(data_dir, "route_stops.csv")
+
+    for p in (stops_path, rm_path, rs_path):
+        if not os.path.isfile(p):
+            raise FileNotFoundError(
+                f"Thiếu file dữ liệu: {p}. Cần stops.csv, route_master.csv, route_stops.csv."
+            )
+
+    df_stops = pd.read_csv(stops_path)
+    # Giữ mã tuyến dạng chuỗi (vd. "01" không thành số 1)
+    df_rm = pd.read_csv(rm_path, dtype={"route_code": str})
+    df_rs = pd.read_csv(rs_path, dtype={"route_code": str})
+    df_rm["route_code"] = df_rm["route_code"].map(_norm_route_code)
+    df_rs["route_code"] = df_rs["route_code"].map(_norm_route_code)
+
+    required_s = {"stop_id", "stop_name", "stop_category", "latitude", "longitude"}
+    if not required_s.issubset(df_stops.columns):
+        raise ValueError(f"stops.csv thiếu cột: {required_s - set(df_stops.columns)}")
+
+    rm_cols = {"route_code", "route_name", "service_start", "service_end"}
+    if not rm_cols.issubset(df_rm.columns):
+        raise ValueError("route_master.csv cần: route_code, route_name, service_start, service_end")
+    if "color" not in df_rm.columns:
+        df_rm = df_rm.copy()
+        df_rm["color"] = "#607D8B"
+
+    if not {"route_code", "sequence", "stop_id"}.issubset(df_rs.columns):
+        raise ValueError("route_stops.csv cần: route_code, sequence, stop_id")
+
+    stops: List[BusStop] = []
+    for _, row in df_stops.sort_values("stop_id").iterrows():
+        stops.append(
+            BusStop(
+                int(row["stop_id"]),
+                str(row["stop_name"]),
+                str(row["stop_category"]),
+                float(row["latitude"]),
+                float(row["longitude"]),
+            )
+        )
+    stop_ids_set = {s.id for s in stops}
+
+    routes: Dict[str, Dict[str, Any]] = {}
+    route_order = sorted(df_rm["route_code"].unique())
+
+    for code in route_order:
+        rrow = df_rm[df_rm["route_code"] == code]
+        if rrow.empty:
+            continue
+        r0 = rrow.iloc[0]
+        seg = df_rs[df_rs["route_code"] == code].sort_values("sequence")
+        path = [int(x) for x in seg["stop_id"].tolist()]
+        if len(path) < 2:
+            raise ValueError(f"Tuyến {code}: cần ít nhất 2 trạm trong route_stops.csv")
+        for sid in path:
+            if sid not in stop_ids_set:
+                raise ValueError(f"Tuyến {code}: stop_id {sid} không có trong stops.csv")
+
+        routes[str(code)] = {
+            "name": str(r0["route_name"]),
+            "color": str(r0["color"]),
+            "service_start": str(r0["service_start"]),
+            "service_end": str(r0["service_end"]),
+            "stops": path,
+        }
+
+    rm_codes = set(df_rm["route_code"])
+    rs_codes = set(df_rs["route_code"])
+    if rm_codes != rs_codes:
+        raise ValueError(
+            f"route_master và route_stops không khớp tuyến: {rm_codes ^ rs_codes}"
+        )
+
+    return stops, routes, sorted(routes.keys(), key=lambda x: (len(x), x))
+
+
 # ---------------------------------------------------------------------------
 # Network class
 # ---------------------------------------------------------------------------
 class HCMCBusNetwork:
-    """Multi-route bus network with demand simulation."""
+    """Multi-route bus network; topology từ CSV trong ``data_dir``."""
 
-    def __init__(self, seed: int = 42) -> None:
-        self.stops = NETWORK_STOPS
+    def __init__(self, seed: int = 42, data_dir: str | None = None) -> None:
+        self._data_dir = data_dir if data_dir is not None else default_data_dir()
+        self.stops, self.routes, self.route_codes = load_network_from_csv(self._data_dir)
         self.stop_map: Dict[int, BusStop] = {s.id: s for s in self.stops}
-        self.routes = ROUTE_DEFS
-        self.route_codes = sorted(self.routes.keys())
         self.rng = np.random.default_rng(seed)
 
         self.graph = self._build_graph()
         self.demand = self._simulate_demand()
         self.route_rtt = self._compute_route_rtts()
-        # Per-stop multipliers for passenger wait (GNN congestion propagation); default uniform
         self.wait_weight_by_stop: Dict[int, float] = {
             s.id: 1.0 for s in self.stops
         }
@@ -92,8 +151,7 @@ class HCMCBusNetwork:
     def _build_graph(self) -> nx.Graph:
         G = nx.Graph()
         for s in self.stops:
-            G.add_node(s.id, name=s.name, category=s.category,
-                       pos=(s.lon, s.lat))
+            G.add_node(s.id, name=s.name, category=s.category, pos=(s.lon, s.lat))
         for rdef in self.routes.values():
             ids = rdef["stops"]
             for a, b in zip(ids[:-1], ids[1:]):
@@ -108,10 +166,6 @@ class HCMCBusNetwork:
     # -- demand --------------------------------------------------------------
 
     def _simulate_demand(self) -> Dict[int, float]:
-        """
-        Per-stop average demand.  Stops served by more routes are busier
-        (higher accessibility ⇒ higher ridership).
-        """
         demand: Dict[int, float] = {}
         for s in self.stops:
             lo, hi = DEMAND_RANGE[s.category]
@@ -126,7 +180,6 @@ class HCMCBusNetwork:
     # -- route metrics -------------------------------------------------------
 
     def _compute_route_rtts(self) -> Dict[str, float]:
-        """Round-trip time (minutes) per route."""
         rtt: Dict[str, float] = {}
         for code in self.route_codes:
             ids = self.routes[code]["stops"]
@@ -150,18 +203,9 @@ class HCMCBusNetwork:
                 if stop_id in self.routes[c]["stops"]]
 
     def get_stop_ids(self) -> List[int]:
-        """Ordered stop IDs matching the adjacency matrix row/column order."""
         return sorted(s.id for s in self.stops)
 
     def get_adjacency_matrix(self, weighted: bool = False) -> "np.ndarray":
-        """
-        Return (N, N) adjacency matrix in consistent stop-id order.
-
-        Parameters
-        ----------
-        weighted : bool
-            If True, use distance_km as edge weight; otherwise binary.
-        """
         node_list = self.get_stop_ids()
         weight = "distance_km" if weighted else None
         A = nx.to_numpy_array(self.graph, nodelist=node_list, weight=weight)
@@ -174,10 +218,6 @@ class HCMCBusNetwork:
         schedule: np.ndarray,
         slot_minutes: int,
     ) -> List[dict]:
-        """
-        schedule[r, k]: tuyến r có khởi hành tại slot k (xuất bến trạm đầu).
-        Độ dày cạnh ~ số chuyến / ngày (không dùng headway cố định).
-        """
         from utils.schema_sim import SERVICE_END, SERVICE_START
 
         span_min = (
@@ -268,9 +308,6 @@ class HCMCBusNetwork:
         }
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371.0
     dlat = np.radians(lat2 - lat1)

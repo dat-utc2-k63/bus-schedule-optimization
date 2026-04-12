@@ -1,20 +1,23 @@
 """
 utils/schema_sim.py — Normalized 8-table schema simulator
 ==========================================================
-Matches the canonical database schema:
+Topology (trạm + lộ trình tuyến) đọc từ ``data/stops.csv``, ``data/route_master.csv``,
+``data/route_stops.csv`` qua ``HCMCBusNetwork`` — không hard-code trong code.
 
-  1. Route_Master          — route-level info
-  2. Stops                 — all bus stops
-  3. Network_Segments      — graph edges (route × stop pair)
-  4. Buses                 — fleet catalogue
-  5. Trips                 — each bus trip (one departure per route)
-  6. Stop_Times            — planned arrival / departure per stop per trip
-  7. SpatioTemporal_Snapshots — long-format time-series for GNN training
-  8. Operation_Logs        — actual operation (delays, boarding counts)
+Bảng sinh ra (ghi ``data/<name>.csv``):
 
-All tables are written as CSV to  data/<table_name>.csv
-The GNN training pipeline reads SpatioTemporal_Snapshots via
-``build_feature_tensor_from_snapshots()``.
+  1. Route_Master          — tuyến + quãng đường + màu + khung giờ (từ net)
+  2. Stops                 — trạm (từ net)
+  3. Network_Segments      — đoạn cạnh theo tuyến (suy ra từ lộ trình + đồ thị)
+  4. Buses                 — đội xe
+  5. Trips                 — chuyến
+  6. Stop_Times            — lịch kế hoạch theo trạm
+  7. SpatioTemporal_Snapshots — chuỗi thời gian cho GNN
+  8. Operation_Logs        — vận hành thực tế (mô phỏng)
+
+``route_stops.csv`` là cấu hình nguồn (không ghi đè khi generate).
+
+GNN: ``build_feature_tensor_from_snapshots()``.
 """
 
 from __future__ import annotations
@@ -55,7 +58,7 @@ class SchemaSimulator:
     Parameters
     ----------
     net : HCMCBusNetwork
-        The multi-route network (13 stops, 4 routes).
+        Mạng đã tải từ ``data/stops.csv`` + ``route_master.csv`` + ``route_stops.csv``.
     seed : int
         RNG seed for reproducibility.
     """
@@ -70,7 +73,7 @@ class SchemaSimulator:
     def build_route_master(self) -> pd.DataFrame:
         """
         PK: route_code.
-        Columns: route_name, total_distance_km, service_start, service_end.
+        Columns: route_name, total_distance_km, service_start, service_end, color.
         """
         rows = []
         for code in self.net.route_codes:
@@ -87,6 +90,7 @@ class SchemaSimulator:
                     "total_distance_km": round(total_km, 3),
                     "service_start": SERVICE_START.isoformat(timespec="minutes"),
                     "service_end": SERVICE_END.isoformat(timespec="minutes"),
+                    "color": rdef["color"],
                 }
             )
         return pd.DataFrame(rows)
@@ -464,6 +468,49 @@ class SchemaSimulator:
             print(f"  wrote {path}  ({len(df):,} rows)")
 
         return tables
+
+
+# ---------------------------------------------------------------------------
+# Đọc lại 8 bảng đã ghi (tránh sinh lại mỗi lần chạy notebook / main)
+# ---------------------------------------------------------------------------
+GENERATED_TABLE_FILES: Dict[str, str] = {
+    "route_master": "route_master.csv",
+    "stops": "stops.csv",
+    "network_segments": "network_segments.csv",
+    "buses": "buses.csv",
+    "trips": "trips.csv",
+    "stop_times": "stop_times.csv",
+    "spatiotemporal_snapshots": "spatiotemporal_snapshots.csv",
+    "operation_logs": "operation_logs.csv",
+}
+
+
+def all_generated_tables_exist(out_dir: str = "data") -> bool:
+    """True nếu đủ 8 file CSV đã sinh (cùng tên với ``generate_all``)."""
+    for fn in GENERATED_TABLE_FILES.values():
+        if not os.path.isfile(os.path.join(out_dir, fn)):
+            return False
+    return True
+
+
+def load_generated_tables(out_dir: str = "data") -> Dict[str, pd.DataFrame]:
+    """
+    Đọc 8 bảng từ đĩa — cùng khóa với ``generate_all``.
+
+    Chuẩn hóa ``timestamp`` cho SpatioTemporal_Snapshots (datetime) để EDA/GNN ổn định.
+    """
+    tables: Dict[str, pd.DataFrame] = {}
+    for key, fn in GENERATED_TABLE_FILES.items():
+        path = os.path.join(out_dir, fn)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Thiếu file: {path}")
+        if key == "spatiotemporal_snapshots":
+            df = pd.read_csv(path, parse_dates=["timestamp"])
+        else:
+            df = pd.read_csv(path)
+        tables[key] = df
+    print(f"[schema_sim] Loaded 8 tables from {os.path.abspath(out_dir)} (skip generate)")
+    return tables
 
 
 # ---------------------------------------------------------------------------

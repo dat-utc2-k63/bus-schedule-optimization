@@ -1,0 +1,13 @@
+bus_id,license_plate,capacity,type
+BUS-001,51B-688.49,120,articulated
+BUS-002,51B-178.72,120,articulated
+BUS-003,51B-573.96,80,standard
+BUS-004,51B-745.79,120,articulated
+BUS-005,51B-855.50,80,standard
+BUS-006,51B-264.92,80,standard
+BUS-007,51B-462.83,120,articulated
+BUS-008,51B-505.30,80,standard
+BUS-009,51B-898.15,80,standard
+BUS-010,51B-349.66,120,articulated
+BUS-011,51B-730.41,120,articulated
+BUS-012,51B-501.89,30,minibus

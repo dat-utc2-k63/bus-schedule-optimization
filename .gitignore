@@ -1,41 +1,8 @@
-# Byte-compiled / cache
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-
-# Environment & secrets
-.env
-.env.*
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Tools
-.pytest_cache/
-.mypy_cache/
-.coverage
-htmlcov/
 *.egg-info/
 .eggs/
-dist/
-build/
-
-# OS / IDE
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-
-# TensorFlow / Keras
-*.h5
-*.keras
-
-# Dữ liệu sinh bởi pipeline (bỏ comment các dòng dưới nếu bạn muốn commit CSV vào git)
-/data/*.csv
-/data/gnn_auxiliary.json
+.ipynb_checkpoints/
+.env
+.venv/
+venv/
