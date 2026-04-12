@@ -1,0 +1,20 @@
+# Core ML framework
+# Newer Python (e.g. 3.12+) only gets TF 2.16+ wheels; avoid capping <2.16 on those builds.
+tensorflow>=2.10
+spektral==1.3.1
+
+# Metaheuristic optimization (GA, PSO, SA, Tabu)
+scikit-opt==0.6.6
+
+# Graph & data processing
+networkx>=3.0
+pandas>=2.0
+# TF 2.16+ commonly pairs with NumPy 2.x on current Python releases.
+numpy>=1.23
+
+# Visualization (optional but useful for thesis figures)
+matplotlib>=3.7
+seaborn>=0.12
+
+# Web dashboard
+flask>=3.0

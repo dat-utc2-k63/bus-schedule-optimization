@@ -1,0 +1,333 @@
+/* Hybrid AI Bus Dashboard — TP.HCM */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: #eef1f6;
+  color: #1a1a2e;
+  min-height: 100vh;
+}
+
+.header {
+  background: linear-gradient(135deg, #1565c0, #0d47a1);
+  color: #fff;
+  padding: 1.4rem 1.5rem;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.header h1 { font-size: 1.45rem; font-weight: 700; letter-spacing: 0.02em; }
+.header p { font-size: 0.88rem; opacity: 0.9; margin-top: 0.35rem; }
+
+/* ----- tabs ----- */
+.nav-wrap {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+  margin-top: -0.5rem;
+  position: relative;
+  z-index: 2;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  background: #fff;
+  padding: 0.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+.tab {
+  padding: 0.65rem 1.25rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #444;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tab:hover { background: #e3f2fd; color: #0d47a1; }
+.tab.active {
+  background: #1565c0;
+  color: #fff;
+}
+
+.panel { display: none; padding-bottom: 2rem; }
+.panel.active { display: block; }
+
+.summary-strip {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  flex-wrap: wrap;
+}
+
+.summary-chip {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  background: #e8f0fe;
+  color: #1565c0;
+  font-weight: 600;
+}
+
+.main { max-width: 1400px; margin: 1rem auto; padding: 0 1.25rem; }
+
+.graph-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 960px) {
+  .graph-row { grid-template-columns: 1fr; }
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.card-head {
+  padding: 0.85rem 1.1rem;
+  font-weight: 700;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-head .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.before .card-head { background: #fff3e0; color: #e65100; }
+.after .card-head { background: #e8f5e9; color: #2e7d32; }
+
+.cy-wrap {
+  width: 100%;
+  height: 420px;
+  background: #fafbfc;
+  border-top: 1px solid #eee;
+}
+
+.mini-stats {
+  display: flex;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+
+.mini-stat {
+  flex: 1;
+  min-width: 100px;
+  text-align: center;
+  padding: 0.5rem;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.mini-stat .val { font-size: 1.15rem; font-weight: 700; }
+.mini-stat .lbl { font-size: 0.72rem; color: #666; margin-top: 0.15rem; }
+
+.legend {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  padding: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.76rem;
+}
+
+.legend-dot { width: 14px; height: 4px; border-radius: 2px; }
+
+/* comparison */
+.comp-section h2 {
+  font-size: 1.1rem;
+  padding: 1rem 1.1rem;
+  background: #fff;
+  border-radius: 12px 12px 0 0;
+  border-bottom: 1px solid #eee;
+}
+
+table.comp {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
+}
+
+table.comp th {
+  background: #f5f7fa;
+  padding: 0.65rem 1rem;
+  text-align: left;
+  font-size: 0.78rem;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+table.comp td {
+  padding: 0.65rem 1rem;
+  border-top: 1px solid #f0f0f0;
+  font-size: 0.9rem;
+}
+
+table.comp tr:hover td { background: #fafbfc; }
+
+.pct-good { color: #2e7d32; font-weight: 700; }
+.pct-bad { color: #c62828; font-weight: 700; }
+.pct-neutral { color: #555; }
+
+.route-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.route-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  padding: 1rem 1.1rem;
+}
+
+.route-card h3 {
+  font-size: 0.95rem;
+  margin-bottom: 0.65rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.route-card .color-bar { width: 28px; height: 5px; border-radius: 3px; }
+
+.rc-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px dashed #eee;
+}
+
+.rc-row:last-child { border: none; }
+.rc-val { font-weight: 600; }
+
+.schedule-meta {
+  padding: 0 1.1rem 0.75rem;
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.45;
+}
+
+.schedule-meta strong { color: #0d47a1; }
+
+#scheduleTable.comp th,
+#scheduleTable.comp td {
+  font-size: 0.84rem;
+}
+
+.footer {
+  text-align: center;
+  padding: 1.25rem;
+  font-size: 0.76rem;
+  color: #888;
+}
+
+/* ----- data panel ----- */
+.data-intro {
+  background: #fff;
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: #444;
+  line-height: 1.5;
+  border-left: 4px solid #1565c0;
+}
+
+.data-intro code {
+  background: #f5f5f5;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.schema-block {
+  background: #fff;
+  border-radius: 12px;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+.schema-block h3 {
+  font-size: 0.95rem;
+  padding: 0.75rem 1rem;
+  background: #f5f7fa;
+  border-bottom: 1px solid #eee;
+  color: #0d47a1;
+}
+
+.schema-meta {
+  font-size: 0.78rem;
+  color: #666;
+  font-weight: 400;
+  margin-left: 0.5rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+table.data-table th {
+  position: sticky;
+  top: 0;
+  background: #e3f2fd;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid #bbdefb;
+}
+
+table.data-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #f0f0f0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+table.data-table tr:nth-child(even) td { background: #fafafa; }
+
+.empty-hint {
+  padding: 1.5rem;
+  text-align: center;
+  color: #888;
+}
+
+.empty-hint code { background: #f0f0f0; padding: 0.2rem 0.5rem; border-radius: 4px; }

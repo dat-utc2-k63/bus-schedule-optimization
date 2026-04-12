@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hybrid AI — Tối Ưu Xe Buýt TP.HCM</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+</head>
+<body>
+
+<header class="header">
+  <h1>Hybrid AI — Tối Ưu Lịch Trình Xe Buýt TP.HCM</h1>
+  <p>Spatio-Temporal GNN × Genetic Algorithm × Tabu Search</p>
+</header>
+
+<nav class="nav-wrap">
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab active" data-panel="opt" role="tab" aria-selected="true">Tối ưu mạng lưới</button>
+    <button type="button" class="tab" data-panel="data" role="tab" aria-selected="false">Dữ liệu huấn luyện (CSV)</button>
+  </div>
+</nav>
+
+<div class="summary-strip" id="summaryStrip"></div>
+
+<div class="main">
+  <!-- ========== PANEL: OPTIMIZATION ========== -->
+  <section id="panel-opt" class="panel active" aria-labelledby="tab-opt">
+
+    <div class="graph-row">
+      <div class="card before">
+        <div class="card-head"><span class="dot" style="background:#e65100"></span> Trước tối ưu (baseline)</div>
+        <div class="cy-wrap" id="cy-before"></div>
+        <div class="legend" id="legend-before"></div>
+        <div class="mini-stats" id="stats-before"></div>
+      </div>
+      <div class="card after">
+        <div class="card-head"><span class="dot" style="background:#2e7d32"></span> Sau tối ưu (GA + Tabu)</div>
+        <div class="cy-wrap" id="cy-after"></div>
+        <div class="legend" id="legend-after"></div>
+        <div class="mini-stats" id="stats-after"></div>
+      </div>
+    </div>
+
+    <div class="comp-section card">
+      <h2>So sánh kết quả tổng thể</h2>
+      <table class="comp" id="compTable">
+        <thead><tr>
+          <th>Chỉ số</th><th>Trước</th><th>Sau</th><th>Thay đổi</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="comp-section card" style="margin-top:1.25rem">
+      <h2>Lịch chạy sau tối ưu</h2>
+      <p class="schedule-meta" id="scheduleMeta"></p>
+      <div class="table-scroll" style="max-height:420px">
+        <table class="comp" id="scheduleTable">
+          <thead>
+            <tr>
+              <th>Giờ xuất bến</th>
+              <th>Mã tuyến</th>
+              <th>Tên tuyến</th>
+              <th>Trạm xuất phát</th>
+              <th>STT</th>
+              <th>Khoảng cách chuyến (ph)</th>
+              <th>RTT (ph)</th>
+              <th>Số xe / tuyến</th>
+            </tr>
+          </thead>
+          <tbody id="scheduleBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2 style="margin-bottom:14px;font-size:1.15rem">Chi tiết từng tuyến</h2>
+    <div class="route-grid" id="routeGrid"></div>
+  </section>
+
+  <!-- ========== PANEL: SCHEMA DATA ========== -->
+  <section id="panel-data" class="panel" aria-labelledby="tab-data">
+    <div class="data-intro">
+      Các bảng dưới đây đọc từ thư mục <code>data/</code> (sinh bởi <code>python main.py</code>).
+      Bảng lớn chỉ hiển thị một phần dòng để trình duyệt nhẹ.
+    </div>
+    <div id="schemaContainer"></div>
+  </section>
+</div>
+
+<footer class="footer">
+  Graduation Project — Hybrid AI for Real-time Bus Scheduling Optimization in Ho Chi Minh City
+</footer>
+
+<script>
+const PAGE = JSON.parse({{ page_json | tojson }});
+const D = PAGE.optimization;
+const SCHEMA = PAGE.schema || {};
+const SCHEMA_ORDER = PAGE.schema_order || Object.keys(SCHEMA);
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escapeAttr(s) {
+  return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
+const CAT_COLOR = {
+  hub: '#e53935', commercial: '#1e88e5', residential: '#43a047',
+  school: '#fb8c00', terminal: '#8e24aa'
+};
+
+let cyBefore = null, cyAfter = null;
+
+/* ----- tabs ----- */
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => {
+      b.classList.remove('active');
+      b.setAttribute('aria-selected', 'false');
+    });
+    btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
+    const id = btn.dataset.panel;
+    document.getElementById('panel-opt').classList.toggle('active', id === 'opt');
+    document.getElementById('panel-data').classList.toggle('active', id === 'data');
+    document.querySelector('.summary-strip').style.display = id === 'opt' ? 'flex' : 'none';
+    if (id === 'opt' && cyBefore && cyAfter) {
+      setTimeout(() => { cyBefore.resize(); cyAfter.resize(); }, 50);
+    }
+  });
+});
+
+/* ----- summary strip ----- */
+(function(){
+  const s = D.summary;
+  const gnn = D.gnn_auxiliary || {};
+  const chips = [
+    s.n_stops + ' trạm',
+    s.n_routes + ' tuyến',
+    'Tổng nhu cầu: ' + Number(s.total_demand).toLocaleString(),
+  ];
+  if (gnn.loaded) {
+    chips.push('Trọng số chờ: GNN + lan truyền ùn trên đồ thị');
+  } else {
+    chips.push('Trọng số chờ: đồng đều (chạy <code>python main.py</code> để sinh GNN)');
+  }
+  document.getElementById('summaryStrip').innerHTML = chips
+    .map(t => '<span class="summary-chip">' + t + '</span>').join('');
+})();
+
+/* ----- cytoscape ----- */
+function renderGraph(containerId, elements) {
+  return cytoscape({
+    container: document.getElementById(containerId),
+    elements: elements,
+    layout: { name: 'preset' },
+    style: [
+      { selector: 'node', style: {
+        'label': 'data(label)',
+        'text-valign': 'bottom',
+        'text-halign': 'center',
+        'font-size': '10px',
+        'font-weight': '600',
+        'text-margin-y': 6,
+        'width': e => 18 + Math.sqrt(e.data('demand')) * 1.4,
+        'height': e => 18 + Math.sqrt(e.data('demand')) * 1.4,
+        'background-color': e => CAT_COLOR[e.data('category')] || '#888',
+        /* wait_weight: GNN+graph congestion (thicker border = ưu tiên giảm chờ hơn) */
+        'border-width': e => {
+          const w = e.data('wait_weight');
+          const x = (typeof w === 'number' && !isNaN(w)) ? w : 1;
+          return Math.min(7, 2 + Math.max(0, x - 1) * 4);
+        },
+        'border-color': '#fff',
+      }},
+      { selector: 'edge', style: {
+        'width': 'data(width)',
+        'line-color': 'data(color)',
+        'curve-style': 'bezier',
+        'target-arrow-shape': 'triangle',
+        'target-arrow-color': 'data(color)',
+        'arrow-scale': 0.7,
+        'label': 'data(label)',
+        'font-size': '8px',
+        'text-rotation': 'autorotate',
+        'text-background-color': '#fff',
+        'text-background-opacity': 0.85,
+        'text-background-padding': '2px',
+        'color': '#333',
+      }},
+    ],
+    userZoomingEnabled: true,
+    userPanningEnabled: true,
+    minZoom: 0.4,
+    maxZoom: 2.5,
+  });
+}
+
+cyBefore = renderGraph('cy-before', D.before.cy);
+cyAfter = renderGraph('cy-after', D.after.cy);
+
+function buildLegend(containerId) {
+  const el = document.getElementById(containerId);
+  let h = '';
+  Object.entries(D.summary.routes).forEach(([c, r]) => {
+    h += '<span class="legend-item"><span class="legend-dot" style="background:' + r.color + '"></span>Tuyến ' + c + '</span>';
+  });
+  Object.entries(CAT_COLOR).forEach(([k, v]) => {
+    h += '<span class="legend-item"><span class="legend-dot" style="background:' + v + ';border-radius:50%;width:8px;height:8px"></span>' + k + '</span>';
+  });
+  el.innerHTML = h;
+}
+buildLegend('legend-before');
+buildLegend('legend-after');
+
+function fillMiniStats(id, m) {
+  document.getElementById(id).innerHTML = [
+    { v: m.avg_wait_min.toFixed(1) + ' ph', l: 'Chờ TB' },
+    { v: m.total_buses, l: 'Tổng xe' },
+    { v: String(m.total_cost), l: 'Chi phí' },
+    { v: String(m.objective), l: 'Objective' },
+  ].map(s => '<div class="mini-stat"><div class="val">' + s.v + '</div><div class="lbl">' + s.l + '</div></div>').join('');
+}
+fillMiniStats('stats-before', D.before);
+fillMiniStats('stats-after', D.after);
+
+/* ----- optimized schedule table ----- */
+(function(){
+  const meta = D.schedule_meta || {};
+  const el = document.getElementById('scheduleMeta');
+  if (el) {
+    const sm = meta.slot_minutes != null ? ' &nbsp;·&nbsp; <strong>Độ phân giải slot:</strong> ' + meta.slot_minutes + ' phút' : '';
+    const gnn = D.gnn_auxiliary || {};
+    const gnnExtra = gnn.loaded && gnn.meta && gnn.meta.description
+      ? '<br><span style="font-size:0.82rem;color:#1565c0"><strong>GNN:</strong> ' + escapeHtml(String(gnn.meta.description)) + '</span>'
+      : '';
+    el.innerHTML = '<strong>Ngày mẫu:</strong> ' + (meta.day || '—') +
+      ' &nbsp;·&nbsp; <strong>Khung phục vụ:</strong> ' + (meta.window || '—') + sm +
+      (meta.note ? '<br><span style="font-size:0.82rem;color:#666">' + meta.note + '</span>' : '') +
+      gnnExtra;
+  }
+  const tbody = document.getElementById('scheduleBody');
+  const sch = D.optimized_schedule || [];
+  sch.forEach(r => {
+    const gap = r.gap_from_prev_min == null ? '—' : String(r.gap_from_prev_min);
+    tbody.innerHTML += '<tr><td>' + r.departure_time + '</td><td>' + r.route_code +
+      '</td><td>' + escapeHtml(r.route_name) + '</td><td>' + escapeHtml(r.first_stop_name) +
+      '</td><td>' + r.trip_seq + '</td><td>' + gap +
+      '</td><td>' + r.rtt_min + '</td><td>' + r.buses_on_route + '</td></tr>';
+  });
+})();
+
+/* ----- comparison ----- */
+(function(){
+  const c = D.comparison;
+  const rows = [
+    ['Thời gian chờ TB (phút)', c.wait],
+    ['Chi phí vận hành', c.cost],
+    ['Tổng số xe', c.buses],
+    ['Hàm mục tiêu', c.objective],
+  ];
+  const tb = document.querySelector('#compTable tbody');
+  rows.forEach(([label, obj]) => {
+    const cls = obj.pct < 0 ? 'pct-good' : obj.pct > 0 ? 'pct-bad' : 'pct-neutral';
+    const sign = obj.pct > 0 ? '+' : '';
+    const bv = typeof obj.before === 'number'
+      ? (Number.isInteger(obj.before) ? obj.before : obj.before.toFixed(2)) : obj.before;
+    const av = typeof obj.after === 'number'
+      ? (Number.isInteger(obj.after) ? obj.after : obj.after.toFixed(2)) : obj.after;
+    tb.innerHTML += '<tr><td>' + label + '</td><td>' + bv + '</td><td>' + av + '</td><td class="' + cls + '">' + sign + obj.pct + '%</td></tr>';
+  });
+})();
+
+/* ----- route cards ----- */
+(function(){
+  const grid = document.getElementById('routeGrid');
+  D.per_route.forEach(r => {
+    const trChange = r.trips_day_before > 0
+      ? (((r.trips_day_after - r.trips_day_before) / r.trips_day_before) * 100).toFixed(0) : '0';
+    const waitChange = r.before_wait > 0 ? ((r.after_wait - r.before_wait) / r.before_wait * 100).toFixed(0) : '0';
+    const cls = w => parseFloat(w) <= 0 ? 'pct-good' : 'pct-bad';
+    grid.innerHTML +=
+      '<div class="route-card">' +
+      '<h3><span class="color-bar" style="background:' + r.color + '"></span>Tuyến ' + r.code + ' — ' + r.name + '</h3>' +
+      '<div class="rc-row"><span>Khoảng cách</span><span class="rc-val">' + r.distance_km + ' km</span></div>' +
+      '<div class="rc-row"><span>Thời gian vòng</span><span class="rc-val">' + r.rtt_min + ' ph</span></div>' +
+      '<div class="rc-row"><span>Chuyến / ngày (trước → sau)</span><span class="rc-val">' + r.trips_day_before + ' → ' + r.trips_day_after +
+      ' <small class="' + (parseFloat(trChange) >= 0 ? 'pct-bad' : 'pct-good') + '">(' + (trChange > 0 ? '+' : '') + trChange + '%)</small></span></div>' +
+      '<div class="rc-row"><span>Chuyến / giờ (trước → sau)</span><span class="rc-val">' +
+      Number(r.trips_h_before).toFixed(2) + ' → ' + Number(r.trips_h_after).toFixed(2) + '</span></div>' +
+      '<div class="rc-row"><span>Số xe (trước → sau)</span><span class="rc-val">' + r.before_buses + ' → ' + r.after_buses + '</span></div>' +
+      '<div class="rc-row"><span>Wait-cost (trước → sau)</span><span class="rc-val">' + r.before_wait.toFixed(0) + ' → ' + r.after_wait.toFixed(0) +
+      ' <small class="' + cls(waitChange) + '">(' + (waitChange > 0 ? '+' : '') + waitChange + '%)</small></span></div>' +
+      '</div>';
+  });
+})();
+
+/* ----- schema tables ----- */
+(function(){
+  const root = document.getElementById('schemaContainer');
+  let html = '';
+  SCHEMA_ORDER.forEach(key => {
+    const block = SCHEMA[key];
+    if (!block) return;
+    const title = block.title || key;
+    const fn = block.filename || '';
+    if (block.missing) {
+      html += '<div class="schema-block"><h3>' + title +
+        '<span class="schema-meta">(' + fn + ' — chưa có file)</span></h3>' +
+        '<p class="empty-hint">Chạy <code>python main.py</code> để sinh dữ liệu vào thư mục <code>data/</code>, sau đó tải lại trang.</p></div>';
+      return;
+    }
+    const meta = 'Hiển thị ' + block.shown + ' / ' + block.total_rows + ' dòng · ' + fn;
+    html += '<div class="schema-block"><h3>' + title + '<span class="schema-meta">' + meta + '</span></h3>';
+    if (!block.rows || block.rows.length === 0) {
+      html += '<p class="empty-hint">Không có dòng dữ liệu.</p></div>';
+      return;
+    }
+    html += '<div class="table-scroll"><table class="data-table"><thead><tr>';
+    block.columns.forEach(c => { html += '<th>' + escapeHtml(String(c)) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    block.rows.forEach(row => {
+      html += '<tr>';
+      block.columns.forEach(c => {
+        const v = row[c];
+        const s = v === null || v === undefined ? '' : String(v);
+        html += '<td title="' + escapeAttr(s) + '">' + escapeHtml(s) + '</td>';
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+  });
+  root.innerHTML = html;
+})();
+</script>
+</body>
+</html>
