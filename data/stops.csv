@@ -1,14 +1,5 @@
 stop_id,stop_name,stop_category,latitude,longitude
-0,Ben Thanh,hub,10.7726,106.698
-1,Nguyen Trai,commercial,10.758,106.682
-2,An Duong Vuong,residential,10.753,106.662
-3,Hung Vuong,commercial,10.756,106.651
-4,Hong Bang,school,10.757,106.638
-5,Kinh Duong Vuong,residential,10.762,106.615
-6,Tan Ky Tan Quy,residential,10.783,106.606
-7,An Suong,terminal,10.834,106.619
-8,Cho Lon,hub,10.75,106.652
-9,Phu Nhuan,commercial,10.798,106.682
-10,Go Vap,terminal,10.823,106.67
-11,Thu Duc,terminal,10.85,106.753
-12,Binh Thanh,residential,10.808,106.71
+0,Ben Thanh,hub,10.7726,106.6980
+1,Nguyen Trai,commercial,10.7580,106.6820
+2,Cho Lon,hub,10.7500,106.6520
+3,Go Vap,terminal,10.8230,106.6700

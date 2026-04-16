@@ -1,5 +1,3 @@
 route_code,route_name,total_distance_km,service_start,service_end,color
-01,Bến Thành – Gò Vấp,19.344,05:00,19:00,#4CAF50
-19,Bến Thành – An Sương,18.263,05:00,19:00,#2196F3
-52,Bến Thành – Thủ Đức,13.198,05:00,19:00,#9C27B0
-65,Chợ Lớn – Thủ Đức,24.57,05:00,19:00,#FF9800
+01,Ben Thanh - Cho Lon,6.5,05:00,19:00,#4CAF50
+19,Nguyen Trai - Go Vap,11.2,05:00,19:00,#2196F3
